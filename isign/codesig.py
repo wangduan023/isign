@@ -16,8 +16,11 @@ class CodeDirectorySlot(object):
     def __init__(self, codesig):
         self.codesig = codesig
 
-    def get_hash(self):
-        return hashlib.sha1(self.get_contents()).digest()
+    def get_hash(self, hash_algorithm):
+        if hash_algorithm == "sha1":
+            return hashlib.sha1(self.get_contents()).digest()
+        elif hash_algorithm == "sha256":
+            return hashlib.sha256(self.get_contents()).digest()
 
 
 class EntitlementsSlot(CodeDirectorySlot):
@@ -88,9 +91,10 @@ class Codesig(object):
         return macho_cs.Blob_.build(blob)
 
     def set_entitlements(self, entitlements_path):
-        # log.debug("entitlements:")
+        log.debug("entitlements:")
         try:
             entitlements = self.get_blob('CSMAGIC_ENTITLEMENT')
+            log.debug("found entitlements slot in the image")
         except KeyError:
             log.debug("no entitlements found")
         else:
@@ -100,10 +104,9 @@ class Codesig(object):
             # entitlements_data = macho_cs.Blob_.build(entitlements)
             # log.debug(hashlib.sha1(entitlements_data).hexdigest())
 
+            log.debug("using entitlements at path: {}".format(entitlements_path))
             entitlements.bytes = open(entitlements_path, "rb").read()
             entitlements.length = len(entitlements.bytes) + 8
-            # entitlements_data = macho_cs.Blob_.build(entitlements)
-            # log.debug(hashlib.sha1(entitlements_data).hexdigest())
 
     def set_requirements(self, signer):
         # log.debug("requirements:")
@@ -158,63 +161,77 @@ class Codesig(object):
         # requirements_data = macho_cs.Blob_.build(requirements)
         # log.debug(hashlib.sha1(requirements_data).hexdigest())
 
-    def get_codedirectory(self):
-        return self.get_blob('CSMAGIC_CODEDIRECTORY')
+    def get_codedirectories(self):
+        code_directories = []
+        for index in self.construct.data.BlobIndex:
+            if index.blob.magic == 'CSMAGIC_CODEDIRECTORY':
+                code_directories.append(index.blob)
 
-    def get_codedirectory_hash_index(self, slot):
+        if len(code_directories) == 0:
+            raise Exception("Couldn't find any code directories")
+
+        return code_directories
+
+    def get_codedirectory_hash_index(self, slot, code_directory):
         """ The slots have negative offsets, because they start from the 'top'.
             So to get the actual index, we add it to the length of the
             slots. """
-        return slot.offset + self.get_codedirectory().data.nSpecialSlots
+        return slot.offset + code_directory.data.nSpecialSlots
 
-    def has_codedirectory_slot(self, slot):
+    def has_codedirectory_slot(self, slot, code_directory):
         """ Some dylibs have all 5 slots, even though technically they only need
             the first 2. If this dylib only has 2 slots, some of the calculated
             indices for slots will be negative. This means we don't do
             those slots when resigning (for dylibs, they don't add any
             security anyway) """
-        return self.get_codedirectory_hash_index(slot) >= 0
+        return self.get_codedirectory_hash_index(slot, code_directory) >= 0
 
-    def fill_codedirectory_slot(self, slot):
+    def fill_codedirectory_slot(self, slot, code_directory, hash_algorithm):
         if self.signable.should_fill_slot(self, slot):
-            index = self.get_codedirectory_hash_index(slot)
-            self.get_codedirectory().data.hashes[index] = slot.get_hash()
+            index = self.get_codedirectory_hash_index(slot, code_directory)
+            code_directory.data.hashes[index] = slot.get_hash(hash_algorithm)
 
-    def set_codedirectory(self, seal_path, info_path, signer):
-        if self.has_codedirectory_slot(EntitlementsSlot):
-            self.fill_codedirectory_slot(EntitlementsSlot(self))
-
-        if self.has_codedirectory_slot(ResourceDirSlot):
-            self.fill_codedirectory_slot(ResourceDirSlot(seal_path))
-
-        if self.has_codedirectory_slot(RequirementsSlot):
-            self.fill_codedirectory_slot(RequirementsSlot(self))
-
-        if self.has_codedirectory_slot(ApplicationSlot):
-            self.fill_codedirectory_slot(ApplicationSlot(self))
-
-        if self.has_codedirectory_slot(InfoSlot):
-            self.fill_codedirectory_slot(InfoSlot(info_path))
-
-        cd = self.get_codedirectory()
-        cd.data.teamID = signer.team_id
-        
+    def set_codedirectories(self, seal_path, info_path, signer):
+        cd = self.get_codedirectories()
         changed_bundle_id = self.signable.get_changed_bundle_id()
-        if changed_bundle_id:
-            offset_change = len(changed_bundle_id) - len(cd.data.ident)
-            cd.data.ident = changed_bundle_id
-            cd.data.hashOffset += offset_change
-            if cd.data.teamIDOffset == None:
-                cd.data.teamIDOffset = offset_change
-            else:
-                cd.data.teamIDOffset += offset_change
-            cd.length += offset_change
-            
-        cd.bytes = macho_cs.CodeDirectory.build(cd.data)
-        # cd_data = macho_cs.Blob_.build(cd)
-        # log.debug(len(cd_data))
-        # open("cdrip", "wb").write(cd_data)
-        # log.debug("CDHash:" + hashlib.sha1(cd_data).hexdigest())
+
+        for i, code_directory in enumerate(cd):
+
+            # TODO: Is there a better way to figure out which hashing algorithm we should use?
+            hash_algorithm = 'sha256' if i > 0 else 'sha1'
+
+            if self.has_codedirectory_slot(EntitlementsSlot, code_directory):
+                self.fill_codedirectory_slot(EntitlementsSlot(self), code_directory, hash_algorithm)
+
+            if self.has_codedirectory_slot(ResourceDirSlot, code_directory):
+                self.fill_codedirectory_slot(ResourceDirSlot(seal_path), code_directory, hash_algorithm)
+
+            if self.has_codedirectory_slot(RequirementsSlot, code_directory):
+                self.fill_codedirectory_slot(RequirementsSlot(self), code_directory, hash_algorithm)
+
+            if self.has_codedirectory_slot(ApplicationSlot, code_directory):
+                self.fill_codedirectory_slot(ApplicationSlot(self), code_directory, hash_algorithm)
+
+            if self.has_codedirectory_slot(InfoSlot, code_directory):
+                self.fill_codedirectory_slot(InfoSlot(info_path), code_directory, hash_algorithm)
+
+            code_directory.data.teamID = signer.team_id
+
+            if changed_bundle_id:
+                offset_change = len(changed_bundle_id) - len(code_directory.data.ident)
+                code_directory.data.ident = changed_bundle_id
+                code_directory.data.hashOffset += offset_change
+                if code_directory.data.teamIDOffset == None:
+                    code_directory.data.teamIDOffset = offset_change
+                else:
+                    code_directory.data.teamIDOffset += offset_change
+                code_directory.length += offset_change
+
+            code_directory.bytes = macho_cs.CodeDirectory.build(code_directory.data)
+            # cd_data = macho_cs.Blob_.build(cd)
+            # log.debug(len(cd_data))
+            # open("cdrip", "wb").write(cd_data)
+            # log.debug("CDHash:" + hashlib.sha1(cd_data).hexdigest())
 
     def set_signature(self, signer):
         # TODO how do we even know this blobwrapper contains the signature?
@@ -242,7 +259,8 @@ class Codesig(object):
         offset = self.construct.data.BlobIndex[0].offset
         for blob in self.construct.data.BlobIndex:
             blob.offset = offset
-            offset += len(macho_cs.Blob.build(blob.blob))
+            blob_data = macho_cs.Blob.build(blob.blob)
+            offset += len(blob_data)
 
         superblob = macho_cs.SuperBlob.build(self.construct.data)
         self.construct.length = len(superblob) + 8
@@ -251,35 +269,9 @@ class Codesig(object):
     def resign(self, bundle, signer):
         """ Do the actual signing. Create the structre and then update all the
             byte offsets """
-        if self.is_sha256_signature():
-            # Might be an app signed from Xcode 7.3+ with sha256 stuff
-            codedirs = []
-            for i, index in enumerate(self.construct.data.BlobIndex):
-                if index.blob.magic == 'CSMAGIC_CODEDIRECTORY':
-                    codedirs.append(i)
-
-            if len(codedirs) == 2:
-                # Remove the sha256 code directory
-                i = codedirs.pop()
-                if (len(self.construct.data.BlobIndex) <= i + 1 or
-                        self.construct.data.BlobIndex[i + 1].blob.magic != 'CSMAGIC_BLOBWRAPPER'):
-                    # There's no following blobwrapper
-                    raise Exception("Could not find blob wrapper!")
-
-                del self.construct.data.BlobIndex[i]
-                removed = 1
-                # CSMAGIC_BLOBWRAPPER is now at index i
-
-                # Remove any previous CSMAGIC_BLOBWRAPPERs, the last one is at the expected position
-                for j in reversed(xrange(i)):
-                    if self.construct.data.BlobIndex[j].blob.magic == 'CSMAGIC_BLOBWRAPPER':
-                        del self.construct.data.BlobIndex[j]
-                        removed += 1
-
-                self.construct.data.count -= removed
-
-            elif len(codedirs) > 2:
-                raise Exception("Too many code directories (%d)" % len(codedirs))
+        codedirs = self.get_codedirectories()
+        if len(codedirs) > 2:
+            raise Exception("Too many code directories (%d)" % len(codedirs))
 
         # TODO - the hasattr is a code smell. Make entitlements dependent on
         # isinstance(App, bundle) or signable type being Executable? May need to do
@@ -288,7 +280,7 @@ class Codesig(object):
             self.set_entitlements(bundle.entitlements_path)
         self.set_requirements(signer)
         # See docs/codedirectory.rst for some notes on optional hashes
-        self.set_codedirectory(bundle.seal_path, bundle.info_path, signer)
+        self.set_codedirectories(bundle.seal_path, bundle.info_path, signer)
         self.set_signature(signer)
         self.update_offsets()
 
