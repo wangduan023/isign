@@ -122,6 +122,7 @@ class Signer(object):
             "-outform", "DER"
         ]
         signature = openssl_command(cmd, data)
+        log.debug("in length: {}, out length: {}".format(len(data), len(signature)))
         # in some cases we've seen this return a zero length file.
         # Misconfigured machines?
         if len(signature) < 128:
