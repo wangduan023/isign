@@ -83,7 +83,7 @@ def make_requirements(drs, ident, common_name):
                                                                 bytes=des_req_data))])
 
     if drs:
-        dr_exprs = [dr.blob.data.expr for dr in drs.data.BlobIndex]
+        dr_exprs = [dr.blob.data.expr for dr in drs.data.BlobIndex if dr.blob is not None]
         expr = make_expr('Or', *dr_exprs)
         lib_req = construct.Container(kind=1, expr=expr)
         lib_req_data = macho_cs.Requirement.build(lib_req)
