@@ -95,6 +95,10 @@ class Signable(object):
             macho.ncmds -= 1
             macho.commands = macho.commands[:-1]
 
+            # We're stripping out the fake LC_CODE_SIGNATURE command, which we know has a size of 16, so we need to
+            # decrement the overall sizeofcmds
+            macho.sizeofcmds -= 16
+
             # Get the length
             fake_codesig = Codesig(self, fake_codesig_data)
             fake_codesig.set_signature(self.signer)
