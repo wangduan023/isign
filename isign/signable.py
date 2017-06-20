@@ -92,8 +92,11 @@ class Signable(object):
             # Stage 1: Fake signature
             fake_codesig_data = make_signature(macho, arch_offset, arch_size, arch['cmds'], self.f, entitlements_file, 0, self.signer, self.bundle.get_info_prop('CFBundleIdentifier'))
 
+            # We're stripping out the fake LC_CODE_SIGNATURE command, which we know has a size of 16, so we need to
+            # decrement the overall sizeofcmds
             macho.ncmds -= 1
             macho.commands = macho.commands[:-1]
+            macho.sizeofcmds -= 16
 
             # Get the length
             fake_codesig = Codesig(self, fake_codesig_data)
