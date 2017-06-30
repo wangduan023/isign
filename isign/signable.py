@@ -18,6 +18,7 @@ from makesig import make_signature
 import os
 import tempfile
 import utils
+import shutil
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +44,6 @@ class Signable(object):
 
         # may set sign_from_scratch to True
         self.arches = self._parse_arches()
-
 
     def _parse_arches(self):
         """ parse architectures and associated Codesig """
@@ -87,10 +87,11 @@ class Signable(object):
         else:
             log.info("signing from scratch!")
             self.sign_from_scratch = True
-            entitlements_file = self.bundle.get_entitlements_path()  #'/path/to/some/entitlements.plist'
+            entitlements_file = self.bundle.get_entitlements_path()  # '/path/to/some/entitlements.plist'
 
             # Stage 1: Fake signature
-            fake_codesig_data = make_signature(macho, arch_offset, arch_size, arch['cmds'], self.f, entitlements_file, 0, self.signer, self.bundle.get_info_prop('CFBundleIdentifier'))
+            fake_codesig_data = make_signature(macho, arch_offset, arch_size, arch['cmds'], self.f, entitlements_file,
+                                               0, self.signer, self.bundle.get_info_prop('CFBundleIdentifier'))
 
             # We're stripping out the fake LC_CODE_SIGNATURE command, which we know has a size of 16, so we need to
             # decrement the overall sizeofcmds
@@ -107,8 +108,9 @@ class Signable(object):
             log.debug("fake codesig length: {}".format(fake_codesig_length))
 
             # stage 2: real signature
-            codesig_data = make_signature(macho, arch_offset, arch_size, arch['cmds'], self.f, entitlements_file, fake_codesig_length, self.signer, self.bundle.get_info_prop('CFBundleIdentifier'))
-
+            codesig_data = make_signature(macho, arch_offset, arch_size, arch['cmds'], self.f, entitlements_file,
+                                          fake_codesig_length, self.signer,
+                                          self.bundle.get_info_prop('CFBundleIdentifier'))
 
             arch['lc_codesig'] = arch['cmds']['LC_CODE_SIGNATURE']
 
@@ -121,7 +123,7 @@ class Signable(object):
         return arch
 
     def _sign_arch(self, arch, app, signer):
-    # Returns slice-relative offset, code signature blob
+        # Returns slice-relative offset, code signature blob
         arch['codesig'].resign(app, signer)
 
         new_codesig_data = arch['codesig'].build_data()
@@ -183,17 +185,16 @@ class Signable(object):
 
             sorted_archs = sorted(self.arches, key=lambda arch: arch['arch_offset'])
 
-
             prev_arch_end = 0
             for arch in sorted_archs:
-                fatentry = arch['macho'] # has pointert to container
+                fatentry = arch['macho']  # has pointert to container
 
                 codesig_arch_offset, new_codesig_data = self._sign_arch(arch, app, signer)
                 codesig_file_offset = arch['arch_offset'] + codesig_arch_offset
-                log.debug('existing arch slice: cputype {}, cpusubtype {}, offset {}, size {}'.format(fatentry.cputype, fatentry.cpusubtype, arch['arch_offset'], arch['arch_size']))
-                log.debug("codesig arch offset: {2}, file offset: {0}, len: {1}".format(codesig_file_offset,
-                                            len(new_codesig_data),
-                                            codesig_arch_offset))
+                log.debug('existing arch slice: cputype {}, cpusubtype {}, offset {}, size {}'
+                          .format(fatentry.cputype, fatentry.cpusubtype, arch['arch_offset'], arch['arch_size']))
+                log.debug("codesig arch offset: {2}, file offset: {0}, len: {1}"
+                          .format(codesig_file_offset, len(new_codesig_data), codesig_arch_offset))
                 assert codesig_file_offset >= (arch['arch_offset'] + arch['arch_size'])
 
                 # Store the old slice offset/sizes because we need them when we copy the data slices from self.f to temp
@@ -211,7 +212,8 @@ class Signable(object):
                 prev_arch_end = arch['arch_offset'] + new_arch_size
                 arch['arch_size'] = new_arch_size
 
-                log.debug('new arch slice after codesig: offset {}, size {}'.format(arch['arch_offset'], arch['arch_size']))
+                log.debug('new arch slice after codesig: offset {}, size {}'.format(arch['arch_offset'],
+                                                                                    arch['arch_size']))
 
             # write slices and code signatures in reverse order
             for arch in reversed(sorted_archs):
@@ -225,8 +227,6 @@ class Signable(object):
                 fatarch_info = self.m.data.FatArch[arch['fat_index']]
                 fatarch_info.size = arch['arch_size']
                 fatarch_info.offset = arch['arch_offset']
-
-
 
         else:
             # copy self.f into temp, reset to beginning of file
@@ -255,7 +255,7 @@ class Signable(object):
         mode = os.stat(self.path).st_mode
         os.chmod(temp.name, mode)
         # log.debug("moving temporary file to {0}".format(self.path))
-        os.rename(temp.name, self.path)
+        shutil.move(temp.name, self.path)
 
 
 class Executable(Signable):
