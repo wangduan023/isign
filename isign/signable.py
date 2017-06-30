@@ -18,6 +18,7 @@ from makesig import make_signature
 import os
 import tempfile
 import utils
+import shutil
 
 log = logging.getLogger(__name__)
 
@@ -254,7 +255,7 @@ class Signable(object):
         mode = os.stat(self.path).st_mode
         os.chmod(temp.name, mode)
         # log.debug("moving temporary file to {0}".format(self.path))
-        os.rename(temp.name, self.path)
+        shutil.move(temp.name, self.path)
 
 
 class Executable(Signable):
