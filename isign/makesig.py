@@ -109,7 +109,7 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
     log.debug("ident: {}".format(ident))
     log.debug("codelimit: {}".format(code_limit))
     teamID = signer._get_team_id() + '\x00'
-    empty_hash = "\x00" * 20
+    empty_hash = "\x00" * 32
     cd = construct.Container(cd_start=None,
                              version=0x20200,
                              flags=0,
@@ -117,8 +117,8 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
                              nSpecialSlots=5,
                              nCodeSlots=len(hashes),
                              codeLimit=code_limit,
-                             hashSize=20,
-                             hashType=1,
+                             hashSize=32,
+                             hashType=2,
                              spare1=0,
                              pageSize=12,
                              spare2=0,
@@ -126,7 +126,7 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
                              scatterOffset=0,
                              teamIDOffset=52 + len(ident) + 1,
                              teamID=teamID,
-                             hashOffset=52 + (20 * 5) + len(ident) + 1 + len(teamID),
+                             hashOffset=52 + (32 * 5) + len(ident) + 1 + len(teamID),
                              hashes=([empty_hash] * 5) + hashes,
                              )
 
@@ -213,7 +213,7 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
 
 
     # generate placeholder LC_CODE_SIGNATURE (like what codesign_allocate does)
-    fake_hashes = ["\x00" * 20]*nCodeSlots
+    fake_hashes = ["\x00" * 32]*nCodeSlots
 
     codesig_cons = make_basic_codesig(entitlements_file,
             drs,
@@ -281,7 +281,7 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
         for i in xrange(nCodeSlots):
             actual_data_slice = actual_data[(0x1000 * i):(0x1000 * i + 0x1000)]
 
-            actual = hashlib.sha1(actual_data_slice).digest()
+            actual = hashlib.sha256(actual_data_slice).digest()
             log.debug("Slot {} (File page @{}): {}".format(i, hex(0x1000 * i), actual.encode('hex')))
             hashes.append(actual)
     else:

@@ -37,7 +37,7 @@ class ApplicationSlot(CodeDirectorySlot):
     offset = -4
 
     def get_hash(self, hash_algorithm):
-        return '\x00' * 20
+        return '\x00' * 32
 
 
 class ResourceDirSlot(CodeDirectorySlot):
@@ -204,7 +204,8 @@ class Codesig(object):
 
         for i, code_directory in enumerate(cd):
             # TODO: Is there a better way to figure out which hashing algorithm we should use?
-            hash_algorithm = 'sha256' if i > 0 else 'sha1'
+            # hash_algorithm = 'sha256' if i > 0 else 'sha1'
+            hash_algorithm = 'sha256'
 
             if self.has_codedirectory_slot(EntitlementsSlot, code_directory):
                 self.fill_codedirectory_slot(EntitlementsSlot(self), code_directory, hash_algorithm)
@@ -253,7 +254,7 @@ class Codesig(object):
 
         code_directories = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
         cd_data = self.get_blob_data(code_directories[0])
-        sig = signer.sign(cd_data, 'sha1')
+        sig = signer.sign(cd_data, 'sha256')
         # log.debug("sig len: {0}".format(len(sig)))
         # log.debug("old sig len: {0}".format(len(oldsig)))
         # open("my_sigrip.der", "wb").write(sig)
