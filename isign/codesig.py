@@ -20,8 +20,10 @@ class CodeDirectorySlot(object):
 
     def get_hash(self, hash_algorithm):
         if hash_algorithm == "sha1":
+            log.debug("--> SHA1")
             return hashlib.sha1(self.get_contents()).digest()
         elif hash_algorithm == "sha256":
+            log.debug("--> SHA256")
             return hashlib.sha256(self.get_contents()).digest()
 
 
@@ -38,8 +40,10 @@ class ApplicationSlot(CodeDirectorySlot):
 
     def get_hash(self, hash_algorithm):
         if hash_algorithm == 'sha1':
+            log.debug("SHA1")
             return '\x00' * 20
         elif hash_algorithm == 'sha256':
+            log.debug("SHA256")
             return '\x00' * 32
 
 
@@ -78,10 +82,13 @@ class Codesig(object):
     def __init__(self, signable, data):
         self.signable = signable
         self.construct = macho_cs.Blob.parse(data)
-        self.is_sha256 = len(self.construct.data.BlobIndex) >= 6
 
-    def is_sha256_signature(self):
-        return self.is_sha256
+        # TODO This isn't right.
+        # self.is_sha256 = len(self.construct.data.BlobIndex) >= 6
+
+    # This isn't right.
+    # def is_sha256_signature(self):
+        # return self.is_sha256
 
     def build_data(self):
         return macho_cs.Blob.build(self.construct)
@@ -91,6 +98,7 @@ class Codesig(object):
         blobs = []
         for index in self.construct.data.BlobIndex:
             if index.blob.magic == magic:
+                log.debug("--------> {}".format(index.blob.magic))
                 blobs.append(index.blob)
 
         if min_expected != None and len(blobs) < min_expected:
@@ -245,7 +253,7 @@ class Codesig(object):
             # open("cdrip", "wb").write(cd_data)
             # log.debug("CDHash:" + hashlib.sha1(cd_data).hexdigest())
 
-    def set_signature(self, signer):
+    def set_signature(self, signer, code_dir=None, hash_algorithm='sha1'):
         # TODO how do we even know this blobwrapper contains the signature?
         # seems like this is a coincidence of the structure, where
         # it's the only blobwrapper at that level...
@@ -256,10 +264,17 @@ class Codesig(object):
         # oldsig = sigwrapper.bytes.value
         # signer._log_parsed_asn1(sigwrapper.data.data.value)
         # open("sigrip.der", "wb").write(sigwrapper.data.data.value)
+        log.debug("----> set_sig")
+        cd_data = None
+        if code_dir is not None:
+            cd_data = self.get_blob_data(code_dir)
+        else:
+            code_directories = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
+            cd_data = self.get_blob_data(code_directories[0])
 
-        code_directories = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
-        cd_data = self.get_blob_data(code_directories[0])
-        sig = signer.sign(cd_data, 'sha1')
+        # log.debug("--------> set_sig {}".format(cd_data))
+        log.debug("---- Signing CODE_DIRECTORY with {}".format(hash_algorithm))
+        sig = signer.sign(cd_data, hash_algorithm)
         # log.debug("sig len: {0}".format(len(sig)))
         # log.debug("old sig len: {0}".format(len(oldsig)))
         # open("my_sigrip.der", "wb").write(sig)
@@ -297,8 +312,18 @@ class Codesig(object):
         self.set_requirements(signer)
         # See docs/codedirectory.rst for some notes on optional hashes
         self.set_codedirectories(bundle.seal_path, bundle.info_path, signer)
-        self.set_signature(signer)
-        self.update_offsets()
+
+        for i, code_directory in enumerate(codedirs):
+            hash_algorithm = None
+            if code_directory.data.hashType == 2:
+                hash_algorithm = 'sha256'
+            elif code_directory.data.hashType == 1:
+                hash_algorithm = 'sha1'
+            
+            self.set_signature(signer, code_directory, hash_algorithm)
+            self.update_offsets()
+
+        
 
     # TODO make this optional, in case we want to check hashes or something
     # log.debug(hashes)

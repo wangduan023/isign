@@ -111,6 +111,7 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, hashes_256, s
     log.debug("codelimit: {}".format(code_limit))
     teamID = signer._get_team_id() + '\x00'
 
+    # ==================================================================================================================
     empty_hash = "\x00" * 20
     cd = construct.Container(cd_start=None,
                              version=0x20200,
@@ -134,7 +135,7 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, hashes_256, s
 
     cd_data = macho_cs.CodeDirectory.build(cd)
 
-    offset = 44
+    offset = 52
     cd_index = construct.Container(type=0,
                                    offset=offset,
                                    blob=construct.Container(magic='CSMAGIC_CODEDIRECTORY',
@@ -144,6 +145,45 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, hashes_256, s
                                                             ))
 
     offset += cd_index.blob.length
+
+    # ==================================================================================================================
+
+    empty_hash_256 = "\x00" * 32
+    cd_256 = construct.Container(cd_start=None,
+                                 version=0x20200,
+                                 flags=0,
+                                 identOffset=52,
+                                 nSpecialSlots=5,
+                                 nCodeSlots=len(hashes_256),
+                                 codeLimit=code_limit,
+                                 hashSize=32,
+                                 hashType=2,
+                                 spare1=0,
+                                 pageSize=12,
+                                 spare2=0,
+                                 ident=ident + '\x00',
+                                 scatterOffset=0,
+                                 teamIDOffset=52 + len(ident) + 1,
+                                 teamID=teamID,
+                                 hashOffset=52 + (32 * 5) + len(ident) + 1 + len(teamID),
+                                 hashes=([empty_hash_256] * 5) + hashes_256,
+                                )
+
+    cd_data_256 = macho_cs.CodeDirectory.build(cd_256)
+
+    # ???? Do we have to account for this 44 bytes?
+    # offset = 44
+    cd_index_256 = construct.Container(type=0,
+                                       offset=offset,
+                                       blob=construct.Container(magic='CSMAGIC_CODEDIRECTORY',
+                                                                length=len(cd_data_256) + 8,
+                                                                data=cd_256,
+                                                                bytes=cd_data_256,
+                                                                ))
+    offset += cd_index_256.blob.length
+
+
+    # ==================================================================================================================
 
     reqs_sblob = make_requirements(drs, ident, common_name)
     reqs_sblob_data = macho_cs.Entitlements.build(reqs_sblob)
@@ -168,41 +208,6 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, hashes_256, s
                                                                           ))
         offset += entitlements_index.blob.length
 
-    empty_hash_256 = "\x00" * 32
-    cd_256 = construct.Container(cd_start=None,
-                             version=0x20200,
-                             flags=0,
-                             identOffset=52,
-                             nSpecialSlots=5,
-                             nCodeSlots=len(hashes_256),
-                             codeLimit=code_limit,
-                             hashSize=32,
-                             hashType=2,
-                             spare1=0,
-                             pageSize=12,
-                             spare2=0,
-                             ident=ident + '\x00',
-                             scatterOffset=0,
-                             teamIDOffset=52 + len(ident) + 1,
-                             teamID=teamID,
-                             hashOffset=52 + (32 * 5) + len(ident) + 1 + len(teamID),
-                             hashes=([empty_hash_256] * 5) + hashes_256,
-                             )
-
-    cd_data_256 = macho_cs.CodeDirectory.build(cd_256)
-
-    # ???? Do we have to account for this 44 bytes?
-    # offset = 44
-    cd_index_256 = construct.Container(type=1000,
-                                       offset=offset,
-                                       blob=construct.Container(magic='CSMAGIC_CODEDIRECTORY',
-                                                                length=len(cd_data_256) + 8,
-                                                                data=cd_256,
-                                                                bytes=cd_data_256,
-                                                                ))
-
-    offset += cd_index_256.blob.length
-
     sigwrapper_index = construct.Container(type=65536,
                                            offset=offset,
                                            blob=construct.Container(magic='CSMAGIC_BLOBWRAPPER',
@@ -210,16 +215,19 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, hashes_256, s
                                                                     data="",
                                                                     bytes="",
                                                                     ))
-    indicies = filter(None, [ cd_index,
+    indicies = filter(None, [ cd_index, cd_index_256,
                 requirements_index,
                 entitlements_index,
-                cd_index_256,
-                sigwrapper_index])
+                sigwrapper_index
+                ])
+
+    # indicies = filter(None, [ requirements_index, requirements_index, requirements_index, requirements_index, requirements_index,
+    #                           requirements_index, requirements_index, requirements_index, requirements_index, requirements_index, requirements_index])
 
     log.debug("-------------> len(indicies) {}".format(type(indicies)))
 
-    for i in indicies:
-        log.debug("---------> 111")
+    # for i in indicies:
+        # log.debug("---------> 111")
 
     # PROBLEM 
     superblob = construct.Container(
