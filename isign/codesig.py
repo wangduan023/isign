@@ -314,14 +314,9 @@ class Codesig(object):
         self.set_codedirectories(bundle.seal_path, bundle.info_path, signer)
 
         for i, code_directory in enumerate(codedirs):
-            hash_algorithm = None
-            if code_directory.data.hashType == 2:
-                hash_algorithm = 'sha256'
-            elif code_directory.data.hashType == 1:
-                hash_algorithm = 'sha1'
-            
-            self.set_signature(signer, code_directory, hash_algorithm)
-            self.update_offsets()
+            self.set_signature(signer)
+
+        self.update_offsets()
 
         
 
