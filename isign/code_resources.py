@@ -235,7 +235,7 @@ def make_seal(source_app_path, target_dir=None):
     # deciding which files should be part of the seal
     rules = template['rules']
     plist = copy.deepcopy(template)
-    resource_builder = ResourceBuilder(source_app_path, rules, respect_omissions=True)
+    resource_builder = ResourceBuilder(source_app_path, rules, respect_omissions=False)
     plist['files'] = resource_builder.scan()
     rules2 = template['rules2']
     resource_builder2 = ResourceBuilder(source_app_path, rules2, respect_omissions=True, include_sha256=True)
