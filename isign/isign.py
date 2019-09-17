@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import archive
 # import makesig
 import exceptions

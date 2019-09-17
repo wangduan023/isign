@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Represents a file that can be signed. A file that
 # conforms to the Mach-O ABI.

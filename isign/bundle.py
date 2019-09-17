@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """ Represents a bundle. In the words of the Apple docs, it's a convenient way to deliver
     software. Really it's a particular kind of directory structure, with one main executable,
     well-known places for various data files and libraries,
@@ -20,7 +21,7 @@ from os.path import basename, exists, join, splitext
 from signer import openssl_command
 import signable
 import shutil
-
+import utils
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class Bundle(object):
     entitlements_path = None  # Not set for every bundle type
 
     def __init__(self, path):
+        # Remove Control character
+        path = utils.remove_control_char(path)
         self.path = path
         self.info_path = join(self.path, 'Info.plist')
         if not exists(self.info_path):
@@ -64,6 +67,7 @@ class Bundle(object):
             executable_name = self.info['CFBundleExecutable']
         else:
             executable_name, _ = splitext(basename(self.path))
+        executable_name = utils.remove_control_char(executable_name)
         executable = join(self.path, executable_name)
         if not exists(executable):
             raise Exception(
