@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # This is a Construct library which represents an
 # LC_CODE_SIGNATURE structure. Like all Construct

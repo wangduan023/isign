@@ -1,4 +1,6 @@
+# -*- coding: utf-8 -*- 
 import binascii
+import re
 
 
 def print_data(data):
@@ -15,4 +17,7 @@ def round_up(x, k):
 def print_structure(container, struct):
     actual_data = struct.build(container)
     return "{}".format(struct.parse(actual_data))
-
+# remove control character in string
+# This will affect the executable_name part in path
+def remove_control_char(str):
+    return re.compile('[\\x00-\\x08\\x0b-\\x0c\\x0e-\\x1f]').sub('', str)

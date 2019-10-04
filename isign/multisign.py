@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from os.path import isdir
 import isign
 from archive import archive_factory
