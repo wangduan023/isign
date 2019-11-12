@@ -224,6 +224,7 @@ class App(Bundle):
         if 'Entitlements' not in plist_dict:
             log.debug('failed to get entitlements in provisioning profile')
             raise Exception('could not find Entitlements in {}'.format(provision_path))
+        plist_dict['Entitlements']['get-task-allow'] = False    
         return plist_dict['Entitlements']
 
     def write_entitlements(self, entitlements):
