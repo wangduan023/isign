@@ -1,4 +1,4 @@
-#
+# -*- coding: utf-8 -*-
 # Library to construct an LC_CODE_SIGNATURE construct
 # from scratch. Does not work yet.
 #

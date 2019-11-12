@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Small object that can be passed around easily, that represents
 # our signing credentials, and can sign data.

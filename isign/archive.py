@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*- 
 """ Represents an app archive. This is an app at rest, whether it's a naked
     app bundle in a directory, or a zipped app bundle, or an IPA. We have a
     common interface to extract these apps to a temp file, then resign them,
@@ -14,10 +15,13 @@ from os.path import abspath, dirname, exists, isdir, isfile, join, normpath
 import tempfile
 import re
 from subprocess import call
+
+
 from signer import Signer
 import shutil
 import zipfile
 
+import utils
 
 REMOVE_WATCHKIT = True
 helper_paths = {}
@@ -303,6 +307,7 @@ class UncompressedArchive(object):
                 (or the dir itself, in the case of an AppArchive archive)
             relative bundle dir is the dir containing the bundle, e.g. Payload/Foo.app
             archive class is the kind of archive this was (Ipa, etc.) """
+        path = utils.remove_control_char(path)
         self.path = path
         self.relative_bundle_dir = relative_bundle_dir
         self.archive_class = archive_class

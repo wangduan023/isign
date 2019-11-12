@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Constructs to represent various structures
 # in a Mach-O binary.
