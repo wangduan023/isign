@@ -104,16 +104,42 @@ def make_requirements(drs, ident, common_name):
     return reqs
 
 
-def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident):
+def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident,
+                       exec_segment_offset, exec_segment_limit, is_main_binary):
     common_name = signer.get_common_name()
     log.debug("ident: {}".format(ident))
     log.debug("codelimit: {}".format(code_limit))
     teamID = signer._get_team_id() + '\x00'
+    ident_for_signature = ident + '\x00'
     empty_hash = "\x00" * 20
+    # The length of the fields in the CodeDirectory is at least these fiels which are always present.
+    #     CD Magic (4)
+    #     length (4)
+    #     version (4)
+    #     flags (4)
+    #     hashOffset (4)
+    #     identOffset (4)
+    #     nSpecialSlots (4)
+    #     nCodeSlots (4)
+    #     codeLimit (4)
+    #     hashSize (1)
+    #     hashType (1)
+    #     spare1 (1)
+    #     pageSize (1)
+    #     spare (4)
+    #     scatterOffset (4)
+    #     teamIDOffset (4)
+    #     spare3 (4)
+    #     codeLimit64 (8)
+    #     execSegBase (8)
+    #     execSegLimit (8)
+    #     execSegFlags (8)
+    # which in total are 88
+    FIXED_FIELDS_SIZE = 88
     cd = construct.Container(cd_start=None,
-                             version=0x20200,
+                             version=0x20400,
                              flags=0,
-                             identOffset=52,
+                             identOffset= FIXED_FIELDS_SIZE,
                              nSpecialSlots=5,
                              nCodeSlots=len(hashes),
                              codeLimit=code_limit,
@@ -122,12 +148,17 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
                              spare1=0,
                              pageSize=12,
                              spare2=0,
-                             ident=ident + '\x00',
+                             ident=ident_for_signature,
                              scatterOffset=0,
-                             teamIDOffset=52 + len(ident) + 1,
+                             teamIDOffset= FIXED_FIELDS_SIZE + len(ident_for_signature),
                              teamID=teamID,
-                             hashOffset=52 + (20 * 5) + len(ident) + 1 + len(teamID),
+                             hashOffset= FIXED_FIELDS_SIZE + (20 * 5) + len(ident_for_signature) + len(teamID),
                              hashes=([empty_hash] * 5) + hashes,
+                             spare3=0,
+                             codeLimit64=0, # 0 means fallback to codeLimit
+                             execSegBase=exec_segment_offset,
+                             execSegLimit=exec_segment_limit,
+                             execSegFlags=1 if is_main_binary else 0,
                              )
 
     cd_data = macho_cs.CodeDirectory.build(cd)
@@ -215,12 +246,22 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
     # generate placeholder LC_CODE_SIGNATURE (like what codesign_allocate does)
     fake_hashes = ["\x00" * 20]*nCodeSlots
 
+    # Initially set to 0 (for fake signature, later on populated).
+    exec_segment_found = False
+    exec_segment_offset = 0
+    exec_segment_limit = 0
+    is_main_binary = 'MH_EXECUTE' in arch_macho.filetype
+    log.debug("is_main_binary: {}".format(nCodeSlots))
+
     codesig_cons = make_basic_codesig(entitlements_file,
             drs,
             codeLimit,
             fake_hashes,
             signer,
-            ident)
+            ident,
+            exec_segment_offset,
+            exec_segment_limit,
+            is_main_binary)
     codesig_data = macho_cs.Blob.build(codesig_cons)
 
     cmd_data = construct.Container(dataoff=codesig_offset,
@@ -251,6 +292,12 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
         # Patch __LINKEDIT
         for lc in arch_macho.commands:
             if lc.cmd == 'LC_SEGMENT_64' or lc.cmd == 'LC_SEGMENT':
+                if (not exec_segment_found) and lc.data.segname == '__TEXT':
+                    # Exec segment offset and limit refer to the first text segment.
+                    exec_segment_offset = lc.data.fileoff
+                    exec_segment_limit = lc.data.filesize
+                    exec_segment_found = True
+                    log.debug('Exec segment found: Offset:{}, limit:{}'.format(exec_segment_offset, exec_segment_limit))
                 if lc.data.segname == '__LINKEDIT':
                     log.debug("found __LINKEDIT, old filesize {}, vmsize {}".format(lc.data.filesize, lc.data.vmsize))
 
@@ -293,7 +340,10 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
             codeLimit,
             hashes,
             signer,
-            ident)
+            ident,
+            exec_segment_offset,
+            exec_segment_limit,
+            is_main_binary)
     codesig_data = macho_cs.Blob.build(codesig_cons)
     cmd_data = construct.Container(dataoff=codesig_offset,
             datasize=len(codesig_data))

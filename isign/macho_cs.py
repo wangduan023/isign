@@ -45,6 +45,14 @@ CodeDirectory = Struct("CodeDirectory",
                        If(lambda ctx: ctx['version'] >= 0x20100, UBInt32("scatterOffset")),
                        If(lambda ctx: ctx['version'] >= 0x20200, UBInt32("teamIDOffset")),
                        If(lambda ctx: ctx['version'] >= 0x20200, Pointer(lambda ctx: ctx['cd_start'] - 8 + ctx['teamIDOffset'], CString('teamID'))),
+
+                       If(lambda ctx: ctx['version'] >= 0x20300, UBInt32("spare3")),
+                       If(lambda ctx: ctx['version'] >= 0x20300, UBInt64("codeLimit64")),
+
+                       If(lambda ctx: ctx['version'] >= 0x20400,UBInt64("execSegBase")),
+                       If(lambda ctx: ctx['version'] >= 0x20400,UBInt64("execSegLimit")),
+                       If(lambda ctx: ctx['version'] >= 0x20400,UBInt64("execSegFlags")),
+
                        Pointer(lambda ctx: ctx['cd_start'] - 8 + ctx['hashOffset'] - ctx['hashSize'] * ctx['nSpecialSlots'], Hashes)
                        )
 
