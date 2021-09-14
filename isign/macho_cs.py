@@ -133,6 +133,11 @@ Entitlement = Struct("Entitlement",
                      PlistAdapter(Bytes("data", lambda ctx: ctx['_']['length'] - 8)),
                      )
 
+DerEntitlement = Struct("DerEntitlement",
+                     # actually a plist in binary format
+                     Bytes("data", lambda ctx: ctx['_']['length'] - 8),
+                     )
+
 EntitlementsBlobIndex = Struct("BlobIndex",
                                Enum(UBInt32("type"),
                                     kSecHostRequirementType=1,
@@ -172,6 +177,7 @@ Blob_ = Struct("Blob",
                     CSMAGIC_REQUIREMENTS=0xfade0c01,
                     CSMAGIC_CODEDIRECTORY=0xfade0c02,
                     CSMAGIC_ENTITLEMENT=0xfade7171,  # actually, this is kSecCodeMagicEntitlement, and not defined in the C version
+                    CSMAGIC_DER_ENTITLEMENT=0xfade7172,
                     CSMAGIC_BLOBWRAPPER=0xfade0b01,  # and this isn't even defined in libsecurity_codesigning; it's in _utilities
                     CSMAGIC_EMBEDDED_SIGNATURE=0xfade0cc0,
                     CSMAGIC_DETACHED_SIGNATURE=0xfade0cc1,
@@ -184,6 +190,7 @@ Blob_ = Struct("Blob",
                             'CSMAGIC_REQUIREMENTS': Entitlements,
                             'CSMAGIC_CODEDIRECTORY': CodeDirectory,
                             'CSMAGIC_ENTITLEMENT': Entitlement,
+                            'CSMAGIC_DER_ENTITLEMENT': DerEntitlement,
                             'CSMAGIC_BLOBWRAPPER': BlobWrapper,
                             'CSMAGIC_EMBEDDED_SIGNATURE': SuperBlob,
                             'CSMAGIC_DETACHED_SIGNATURE': SuperBlob,

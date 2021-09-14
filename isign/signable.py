@@ -12,6 +12,7 @@ from codesig import (Codesig,
                      ResourceDirSlot,
                      RequirementsSlot,
                      ApplicationSlot,
+                     DerEntitlementsSlot,
                      InfoSlot)
 import logging
 import macho
@@ -263,6 +264,7 @@ class Signable(object):
 class Executable(Signable):
     """ The main executable of an app. """
     slot_classes = [EntitlementsSlot,
+                    DerEntitlementsSlot,
                     ResourceDirSlot,
                     RequirementsSlot,
                     ApplicationSlot,
@@ -278,12 +280,14 @@ class Dylib(Signable):
               Add read/write of the embedded Info.plist so we can include InfoSlot below.
     """
     slot_classes = [EntitlementsSlot,
+                    DerEntitlementsSlot,
                     RequirementsSlot]
 
 
 class Appex(Signable):
     """ An app extension  """
     slot_classes = [EntitlementsSlot,
+                    DerEntitlementsSlot,
                     RequirementsSlot,
                     InfoSlot]
 

@@ -24,6 +24,15 @@ class CodeDirectorySlot(object):
             return hashlib.sha1(self.get_contents()).digest()
         elif hash_algorithm == "sha256":
             return hashlib.sha256(self.get_contents()).digest()
+        else:
+            raise ValueError('Incorrect hash algorith {}'.format(hash_algorithm))
+
+class DerEntitlementsSlot(CodeDirectorySlot):
+    offset = -7
+
+    def get_contents(self):
+        blobs = self.codesig.get_blobs('CSMAGIC_DER_ENTITLEMENT', min_expected=1, max_expected=1)
+        return self.codesig.get_blob_data(blobs[0])
 
 
 class EntitlementsSlot(CodeDirectorySlot):
@@ -38,7 +47,13 @@ class ApplicationSlot(CodeDirectorySlot):
     offset = -4
 
     def get_hash(self, hash_algorithm):
-        return '\x00' * 20
+        if hash_algorithm == "sha1":
+            hash_length = 20
+        elif hash_algorithm == "sha256":
+            hash_length = 32
+        else:
+            raise ValueError('Incorrect hash algorith {}'.format(hash_algorithm))
+        return '\x00' * hash_length
 
 
 class ResourceDirSlot(CodeDirectorySlot):
@@ -202,12 +217,10 @@ class Codesig(object):
     def set_codedirectories(self, seal_path, info_path, signer):
         cd = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
         changed_bundle_id = self.signable.get_changed_bundle_id()
-        
+
         hash_size_sha_mapping = { 32: 'sha256', 20: 'sha1' }
 
         for i, code_directory in enumerate(cd):
-            # TODO: Is there a better way to figure out which hashing algorithm we should use?
-            # Probably getting hashSize from code directory is better method
             hash_algorithm = hash_size_sha_mapping.get(code_directory.data.hashSize)
 
             if self.has_codedirectory_slot(EntitlementsSlot, code_directory):
@@ -224,6 +237,9 @@ class Codesig(object):
 
             if self.has_codedirectory_slot(InfoSlot, code_directory):
                 self.fill_codedirectory_slot(InfoSlot(info_path), code_directory, hash_algorithm)
+
+            if self.has_codedirectory_slot(DerEntitlementsSlot, code_directory):
+                self.fill_codedirectory_slot(DerEntitlementsSlot(self), code_directory, hash_algorithm)
 
             code_directory.data.teamID = signer.team_id
 

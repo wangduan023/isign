@@ -7,6 +7,8 @@
 # we may need this someday, so preserving here.
 #
 
+import plistlib
+import io
 import construct
 import hashlib
 import logging
@@ -15,6 +17,7 @@ import macho
 import macho_cs
 import utils
 
+import der_encoder
 
 log = logging.getLogger(__name__)
 
@@ -104,14 +107,23 @@ def make_requirements(drs, ident, common_name):
     return reqs
 
 
-def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident,
-                       exec_segment_offset, exec_segment_limit, is_main_binary):
-    common_name = signer.get_common_name()
-    log.debug("ident: {}".format(ident))
-    log.debug("codelimit: {}".format(code_limit))
-    teamID = signer._get_team_id() + '\x00'
-    ident_for_signature = ident + '\x00'
-    empty_hash = "\x00" * 20
+def build_code_directory_blob(hash_algorithm, teamID, ident_for_signature, code_limit, hashes,
+                              exec_segment_offset, exec_segment_limit, is_main_binary):
+    if hash_algorithm == 'sha1':
+        hash_type_value = 1
+        hash_size = 20
+    elif hash_algorithm == 'sha256':
+        hash_type_value = 2
+        hash_size = 32
+    else:
+        raise ValueError("Incorrect hash type provided: {}".format(hash_algorithm))
+
+    for hash in hashes:
+        if len(hash) != hash_size:
+            raise Exception('Incorrect hash {} for length {} ({})'.format(hash, hash_size, len(hash)))
+
+    empty_hash = "\x00" * hash_size
+    special_slots_length = 7
     # The length of the fields in the CodeDirectory is at least these fiels which are always present.
     #     CD Magic (4)
     #     length (4)
@@ -140,30 +152,58 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
                              version=0x20400,
                              flags=0,
                              identOffset= FIXED_FIELDS_SIZE,
-                             nSpecialSlots=5,
+                             nSpecialSlots=special_slots_length,
                              nCodeSlots=len(hashes),
                              codeLimit=code_limit,
-                             hashSize=20,
-                             hashType=1,
+                             hashSize=hash_size,
+                             hashType=hash_type_value,
                              spare1=0,
-                             pageSize=12,
+                             pageSize=12, # Page size is indicated as a log in base 2. The size is 0x1000 = 2 ^ 12
                              spare2=0,
                              ident=ident_for_signature,
                              scatterOffset=0,
                              teamIDOffset= FIXED_FIELDS_SIZE + len(ident_for_signature),
                              teamID=teamID,
-                             hashOffset= FIXED_FIELDS_SIZE + (20 * 5) + len(ident_for_signature) + len(teamID),
-                             hashes=([empty_hash] * 5) + hashes,
+                             hashOffset= FIXED_FIELDS_SIZE + (hash_size * special_slots_length) + len(ident_for_signature) + len(teamID),
+                             hashes=([empty_hash] * special_slots_length) + hashes,
                              spare3=0,
                              codeLimit64=0, # 0 means fallback to codeLimit
                              execSegBase=exec_segment_offset,
                              execSegLimit=exec_segment_limit,
                              execSegFlags=1 if is_main_binary else 0,
                              )
+    return cd
+
+def make_basic_codesig(entitlements_file, drs, code_limit, hashes_sha1, hashes_sha256, signer, ident,
+                       exec_segment_offset, exec_segment_limit, is_main_binary):
+    common_name = signer.get_common_name()
+    log.debug("ident: {}".format(ident))
+    log.debug("codelimit: {}".format(code_limit))
+    teamID = signer._get_team_id() + '\x00'
+    ident_for_signature = ident + '\x00'
+
+    cd = build_code_directory_blob(
+        hash_algorithm='sha1',
+        teamID=teamID,
+        ident_for_signature=ident_for_signature,
+        code_limit=code_limit,
+        hashes=hashes_sha1,
+        exec_segment_offset=exec_segment_offset,
+        exec_segment_limit=exec_segment_limit,
+        is_main_binary=is_main_binary)
 
     cd_data = macho_cs.CodeDirectory.build(cd)
 
-    offset = 44
+    # Superblob has
+    # magic (4)
+    # size (4)
+    # num of blobs (4)
+    # [blob[n], offset to n ] (4 + 4) repeated for each blob
+    number_of_blobs = 4
+    if entitlements_file != None:
+        number_of_blobs += 2
+    offset = 4 + 4 + 4 + (8 * number_of_blobs)
+
     cd_index = construct.Container(type=0,
                                    offset=offset,
                                    blob=construct.Container(magic='CSMAGIC_CODEDIRECTORY',
@@ -185,6 +225,7 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
     offset += requirements_index.blob.length
 
     entitlements_index = None
+    der_entitlements_index = None
     if entitlements_file != None:
         entitlements_bytes = open(entitlements_file, "rb").read()
         entitlements_index = construct.Container(type=5,
@@ -196,6 +237,40 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
                                                                           ))
         offset += entitlements_index.blob.length
 
+        xml_entitlements_dict = plistlib.readPlist(io.BytesIO(entitlements_bytes))
+        der_entitlements_bytes = der_encoder.der_encode(xml_entitlements_dict)
+
+        der_entitlements_index = construct.Container(type=7,
+                                                     offset=offset,
+                                                     blob=construct.Container(magic='CSMAGIC_DER_ENTITLEMENT',
+                                                                              length=len(der_entitlements_bytes) + 8,
+                                                                              data="",
+                                                                              bytes=der_entitlements_bytes
+                                                                          ))
+        offset += der_entitlements_index.blob.length
+
+
+    cd_sha256 = build_code_directory_blob(
+        hash_algorithm='sha256',
+        teamID=teamID,
+        ident_for_signature=ident_for_signature,
+        code_limit=code_limit,
+        hashes=hashes_sha256,
+        exec_segment_offset=exec_segment_offset,
+        exec_segment_limit=exec_segment_limit,
+        is_main_binary=is_main_binary)
+
+    cd_sha256_data = macho_cs.CodeDirectory.build(cd_sha256)
+    cd_sha256_index = construct.Container(type=0x1000,
+                                   offset=offset,
+                                   blob=construct.Container(magic='CSMAGIC_CODEDIRECTORY',
+                                                            length=len(cd_sha256_data) + 8,
+                                                            data=cd_sha256,
+                                                            bytes=cd_sha256_data,
+                                                            ))
+
+    offset += cd_sha256_index.blob.length
+
     sigwrapper_index = construct.Container(type=65536,
                                            offset=offset,
                                            blob=construct.Container(magic='CSMAGIC_BLOBWRAPPER',
@@ -206,6 +281,8 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes, signer, ident
     indicies = filter(None, [cd_index,
                 requirements_index,
                 entitlements_index,
+                der_entitlements_index,
+                cd_sha256_index,
                 sigwrapper_index])
 
     superblob = construct.Container(
@@ -244,7 +321,8 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
 
 
     # generate placeholder LC_CODE_SIGNATURE (like what codesign_allocate does)
-    fake_hashes = ["\x00" * 20]*nCodeSlots
+    fake_hashes_sha1 = ["\x00" * 20] * nCodeSlots
+    fake_hashes_sha256 = ["\x00" * 32] * nCodeSlots
 
     # Initially set to 0 (for fake signature, later on populated).
     exec_segment_found = False
@@ -256,7 +334,8 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
     codesig_cons = make_basic_codesig(entitlements_file,
             drs,
             codeLimit,
-            fake_hashes,
+            fake_hashes_sha1,
+            fake_hashes_sha256,
             signer,
             ident,
             exec_segment_offset,
@@ -287,7 +366,8 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
 
     arch_macho.commands.append(cmd)
 
-    hashes = []
+    hashes_sha1 = []
+    hashes_sha256 = []
     if codesig_data_length > 0:
         # Patch __LINKEDIT
         for lc in arch_macho.commands:
@@ -328,17 +408,23 @@ def make_signature(arch_macho, arch_offset, arch_size, cmds, f, entitlements_fil
         for i in xrange(nCodeSlots):
             actual_data_slice = actual_data[(0x1000 * i):(0x1000 * i + 0x1000)]
 
-            actual = hashlib.sha1(actual_data_slice).digest()
-            log.debug("Slot {} (File page @{}): {}".format(i, hex(0x1000 * i), actual.encode('hex')))
-            hashes.append(actual)
+            actual_sha1 = hashlib.sha1(actual_data_slice).digest()
+            log.debug("Slot {} (File page @{} sha1): {}".format(i, hex(0x1000 * i), actual_sha1.encode('hex')))
+            hashes_sha1.append(actual_sha1)
+
+            actual_sha256 = hashlib.sha256(actual_data_slice).digest()
+            log.debug("Slot {} (File page @{} sha256): {}".format(i, hex(0x1000 * i), actual_sha256.encode('hex')))
+            hashes_sha256.append(actual_sha256)
     else:
-        hashes = fake_hashes
+        hashes_sha1 = fake_hashes_sha1
+        hashes_sha256 = fake_hashes_sha256
 
     # Replace placeholder with real one.
     codesig_cons = make_basic_codesig(entitlements_file,
             drs,
             codeLimit,
-            hashes,
+            hashes_sha1,
+            hashes_sha256,
             signer,
             ident,
             exec_segment_offset,
