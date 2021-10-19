@@ -238,7 +238,7 @@ def make_basic_codesig(entitlements_file, drs, code_limit, hashes_sha1, hashes_s
         offset += entitlements_index.blob.length
 
         xml_entitlements_dict = plistlib.readPlist(io.BytesIO(entitlements_bytes))
-        der_entitlements_bytes = der_encoder.der_encode(xml_entitlements_dict)
+        der_entitlements_bytes = der_encoder.encode(xml_entitlements_dict)
 
         der_entitlements_index = construct.Container(type=7,
                                                      offset=offset,
